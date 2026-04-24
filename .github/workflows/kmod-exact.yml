@@ -1,0 +1,66 @@
+name: kmod-amneziawg exact kernel 5.4.281
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ccache file g++ gawk gettext git libelf-dev libncurses5-dev libssl-dev python2.7-dev python3 unzip wget rsync time xsltproc zlib1g-dev bc
+      
+      - name: sdk kernel
+        run: |
+          wget -q https://downloads.immortalwrt.org/releases/21.02-SNAPSHOT/targets/mediatek/mt7622/openwrt-sdk-21.02-SNAPSHOT-mediatek-mt7622_gcc-8.4.0_musl.Linux-x86_64.tar.xz
+          tar xf openwrt-sdk-21.02-SNAPSHOT-mediatek-mt7622_gcc-8.4.0_musl.Linux-x86_64.tar.xz
+          mv openwrt-sdk-21.02-SNAPSHOT-mediatek-mt7622_gcc-8.4.0_musl.Linux-x86_64 sdk
+          
+          # kernel 5.4.281 exact
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.281.tar.xz
+          tar xf linux-5.4.281.tar.xz
+      
+      - name: kernel config
+        run: |
+          cp $GITHUB_WORKSPACE/.config.router linux-5.4.281/.config
+          cd linux-5.4.281
+          ARCH=arm64 make olddefconfig
+          ARCH=arm64 make prepare
+          ARCH=arm64 make scripts
+      
+      - name: amneziawg src
+        run: |
+          git clone --depth 1 --branch v1.0.20211208 https://github.com/amnezia-vpn/amneziawg-linux-kernel-module.git awg-src
+      
+      - name: compile
+        run: |
+          export PATH=$PWD/sdk/staging_dir/toolchain-aarch64_cortex-a53_gcc-8.4.0_musl/bin:$PATH
+          export CROSS_COMPILE=aarch64-openwrt-linux-musl-
+          
+          cd awg-src/src
+          KERNELDIR=$GITHUB_WORKSPACE/linux-5.4.281 ARCH=arm64 make
+          
+          ls -la *.ko
+      
+      - name: package
+        run: |
+          mkdir -p artifacts kmod/pkg/lib/modules/5.4.281 kmod/pkg/CONTROL
+          cp awg-src/src/wireguard.ko kmod/pkg/lib/modules/5.4.281/amneziawg.ko
+          
+          cat > kmod/pkg/CONTROL/control << 'CON'
+          Package: kmod-amneziawg
+          Version: 5.4.281+1.0.20211208-1
+          Depends: kernel (=5.4.281-1-4c7e5466907f1ea6f0df191d883536659804de5abd36a7d4e70c039b343d90b6)
+          Architecture: aarch64_cortex-a53
+          Section: kernel
+          Description: AmneziaWG kernel module (exact kernel match)
+          CON
+          
+          sdk/staging_dir/host/bin/opkg-build kmod/pkg artifacts/
+          ls -la artifacts/
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kmod-exact-5.4.281
+          path: artifacts/*.ipk
