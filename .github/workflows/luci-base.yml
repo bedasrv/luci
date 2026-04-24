@@ -63,7 +63,7 @@ jobs:
           find sdk/bin/packages -name "*.ipk" -exec cp {} artifacts/ \;
           ls -la artifacts/
       
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: luci-base-ipk
           path: artifacts/
