@@ -1,0 +1,69 @@
+name: Build luci-base for mt7622
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ccache ecj fastjar file g++ gawk gettext git java-propose-classpath libelf-dev libncurses5-dev libncursesw5-dev libssl-dev python2.7-dev python3 unzip wget python3-distutils python3-setuptools rsync subversion swig time xsltproc procps zlib1g-dev
+      
+      - name: download SDK
+        run: |
+          wget -q https://downloads.immortalwrt.org/releases/21.02-SNAPSHOT/targets/mediatek/mt7622/openwrt-sdk-21.02-SNAPSHOT-mediatek-mt7622_gcc-8.4.0_musl.Linux-x86_64.tar.xz
+          xz -d openwrt-sdk-21.02-SNAPSHOT-mediatek-mt7622_gcc-8.4.0_musl.Linux-x86_64.tar.xz
+          tar xf openwrt-sdk-21.02-SNAPSHOT-mediatek-mt7622_gcc-8.4.0_musl.Linux-x86_64.tar
+          mv openwrt-sdk-21.02-SNAPSHOT-mediatek-mt7622_gcc-8.4.0_musl.Linux-x86_64 sdk
+      
+      - name: prepare feeds
+        run: |
+          cd sdk
+          echo "src-link luci $GITHUB_WORKSPACE" > feeds.conf
+          ./scripts/feeds update luci
+          ./scripts/feeds install -a -p luci
+      
+      - name: configure
+        run: |
+          cd sdk
+          echo "CONFIG_PACKAGE_luci-base=y" >> .config
+          echo "CONFIG_PACKAGE_luci-lib-base=y" >> .config
+          echo "CONFIG_PACKAGE_luci-mod-admin-full=y" >> .config
+          echo "CONFIG_PACKAGE_luci-theme-bootstrap=y" >> .config
+          echo "CONFIG_PACKAGE_rpcd=y" >> .config
+          echo "CONFIG_PACKAGE_rpcd-mod-iwinfo=y" >> .config
+          echo "CONFIG_PACKAGE_rpcd-mod-luci=y" >> .config
+          echo "CONFIG_PACKAGE_rpcd-mod-file=y" >> .config
+          echo "CONFIG_PACKAGE_uhttpd=y" >> .config
+          echo "CONFIG_PACKAGE_uhttpd-mod-ubus=y" >> .config
+          make defconfig
+      
+      - name: compile
+        run: |
+          cd sdk
+          make package/luci-base/compile -j$(nproc) || make package/luci-base/compile -j1 V=s
+          make package/luci-lib-base/compile -j$(nproc) || make package/luci-lib-base/compile -j1 V=s
+          make package/luci-lib-ip/compile -j$(nproc) || make package/luci-lib-ip/compile -j1 V=s
+          make package/luci-lib-jsonc/compile -j$(nproc) || make package/luci-lib-jsonc/compile -j1 V=s
+          make package/luci-mod-admin-full/compile -j$(nproc) || make package/luci-mod-admin-full/compile -j1 V=s
+          make package/luci-theme-bootstrap/compile -j$(nproc) || make package/luci-theme-bootstrap/compile -j1 V=s
+          make package/rpcd/compile -j$(nproc) || make package/rpcd/compile -j1 V=s
+          make package/uhttpd/compile -j$(nproc) || make package/uhttpd/compile -j1 V=s
+      
+      - name: package
+        run: |
+          mkdir -p artifacts
+          find sdk/bin/packages -name "*.ipk" -exec cp {} artifacts/ \;
+          ls -la artifacts/
+      
+      - uses: actions/upload-artifact@v3
+        with:
+          name: luci-base-ipk
+          path: artifacts/
